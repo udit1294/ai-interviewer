@@ -1,0 +1,7 @@
+/**
+ * ESLint Configuration
+ */
+
+{
+  "extends": "next/core-web-vitals"
+}
