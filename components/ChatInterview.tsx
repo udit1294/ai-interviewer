@@ -8,6 +8,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { ParsedResume, ConversationMessage, ApiResponse, InterviewEvaluation } from '@/types/interview';
 import Loader from './Loader';
+import { saveLocalAudio } from '@/lib/storage';
 
 interface ChatInterviewProps {
   resumeData: ParsedResume;
@@ -53,19 +54,17 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
 
   // Initialize interview on component mount
   useEffect(() => {
-    initializeInterview();
-    initializeSpeech();
-    startCamera(); // Auto-start camera
-    // Start timer when component mounts
     startTimeRef.current = Date.now();
     timerIntervalRef.current = setInterval(() => {
       setElapsedTime(Math.floor((Date.now() - startTimeRef.current) / 1000));
     }, 1000);
-    
+
+    startCamera();
+    initializeSpeech();
+    initializeInterview();
+
     return () => {
-      if (timerIntervalRef.current) {
-        clearInterval(timerIntervalRef.current);
-      }
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -83,12 +82,42 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
     return `Started: ${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
   };
 
+  const toggleListening = () => {
+    if (isListening) {
+      stopListening();
+    } else {
+      startListening();
+    }
+  };
+
+  const startListening = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.start();
+        setIsListening(true);
+      } catch (e) {
+        // Suppress start errors identically safely
+      }
+    }
+  };
+
+  const stopListening = () => {
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+        setIsListening(false);
+      } catch (e) {
+        // Suppress stop errors identically safely
+      }
+    }
+  };
+
   const initializeSpeech = () => {
-    // Initialize speech recognition
+    // Initialize speech recognition securely
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (SpeechRecognition) {
       recognitionRef.current = new SpeechRecognition();
-      recognitionRef.current.continuous = true; // Keep listening continuously
+      recognitionRef.current.continuous = true;
       recognitionRef.current.interimResults = true;
       recognitionRef.current.language = 'en-US';
 
@@ -96,14 +125,6 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
       recognitionRef.current.onend = () => {
         setIsListening(false);
         setInterimTranscript('');
-        // Auto-restart recognition for continuous VAD
-        if (recognitionRef.current && !isEvaluating) {
-          try {
-            recognitionRef.current.start();
-          } catch (e) {
-            // Recognition already started
-          }
-        }
       };
 
       recognitionRef.current.onresult = (event: any) => {
@@ -116,70 +137,45 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
             interimText += transcript;
           }
         }
-        // Show interim results as you speak
         setInterimTranscript(interimText);
       };
 
       recognitionRef.current.onerror = (event: any) => {
+        setIsListening(false);
         if (event.error !== 'no-speech') {
-          setError(`Speech recognition error: ${event.error}`);
+          console.warn(`Speech recognition API explicitly reported: ${event.error}`);
         }
       };
 
-      // Start listening immediately for VAD
-      try {
-        recognitionRef.current.start();
-      } catch (e) {
-        console.error('Error starting recognition:', e);
-      }
-    }
-  };
-
-  // VAD functions are kept for backward compatibility but auto-listening is now the default
-  const startListening = () => {
-    if (recognitionRef.current) {
-      try {
-        recognitionRef.current.start();
-      } catch (e) {
-        // Already started
-      }
-    }
-  };
-
-  const stopListening = () => {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
+      // Safely toggle stream seamlessly after permissions hook natively
+      startListening();
     }
   };
 
   const speakText = (text: string) => {
-    // Cancel any ongoing speech
-    window.speechSynthesis.cancel();
+    // Show text immediately
     if (streamingIntervalRef.current) clearInterval(streamingIntervalRef.current);
-
-    // Reset streaming text
     setStreamingText('');
+    streamTextCharByChar(text); // Start text animation immediately
 
+    // Stop mic while AI speaks
+    stopListening();
+
+    // Use browser built-in TTS — instant, no API needed
+    window.speechSynthesis.cancel();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 1;
     utterance.pitch = 1;
     utterance.volume = 1;
-
-    utterance.onstart = () => {
-      setIsSpeaking(true);
-      // Start streaming text character by character
-      streamTextCharByChar(text);
-    };
+    utterance.onstart = () => setIsSpeaking(true);
     utterance.onend = () => {
       setIsSpeaking(false);
-      if (streamingIntervalRef.current) clearInterval(streamingIntervalRef.current);
-      setStreamingText(text); // Show full text when done
+      if (!answeredLastQuestion && !isEvaluating) startListening();
     };
     utterance.onerror = () => {
       setIsSpeaking(false);
-      if (streamingIntervalRef.current) clearInterval(streamingIntervalRef.current);
+      if (!answeredLastQuestion && !isEvaluating) startListening();
     };
-
     synthRef.current = utterance;
     window.speechSynthesis.speak(utterance);
   };
@@ -201,7 +197,7 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
   const startCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 320 }, height: { ideal: 240 } },
+        video: { width: { ideal: 640 }, height: { ideal: 480 } },
         audio: true,
       });
 
@@ -211,19 +207,18 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
 
       setCameraActive(true);
 
-      // Initialize audio-only media recorder for MP3 conversion
-      const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const audioRecorder = new MediaRecorder(audioStream, { mimeType: 'audio/webm' });
+      // Initialize combined video/audio media recorder native to the browser
+      const combinedRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
       audioChunksRef.current = [];
 
-      audioRecorder.ondataavailable = (event) => {
+      combinedRecorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           audioChunksRef.current.push(event.data);
         }
       };
 
-      mediaRecorderRef.current = audioRecorder;
-      audioRecorder.start();
+      mediaRecorderRef.current = combinedRecorder;
+      combinedRecorder.start();
       setIsRecording(true);
     } catch (err) {
       setError('Unable to access camera/microphone. Please check permissions.');
@@ -255,7 +250,7 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
 
     const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
     const url = URL.createObjectURL(blob);
-    
+
     const reader = new FileReader();
     return new Promise((resolve) => {
       reader.onloadend = () => {
@@ -266,11 +261,29 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
   };
 
   const exitInterview = async () => {
-    const confirm = window.confirm('Are you sure you want to exit the interview? Your progress will be lost.');
+    const confirm = window.confirm('Are you sure you want to exit? Your partial recording will be saved to your dashboard.');
     if (confirm) {
+      setIsLoading(true);
       await stopCamera();
-      // Reset state and go back
-      window.location.href = '/';
+
+      // Upload partial video seamlessly
+      if (audioChunksRef.current && audioChunksRef.current.length > 0) {
+        const formData = new FormData();
+        const currentParams = new URLSearchParams(window.location.search);
+        const resolvedSessionId = currentParams.get('sessionId') || sessionStorage.getItem('sessionId') || '';
+
+        if (resolvedSessionId) {
+          const blob = new Blob(audioChunksRef.current, { type: 'video/webm' });
+          formData.append('file', blob, 'partial_recording.webm');
+          formData.append('sessionId', resolvedSessionId);
+          formData.append('duration', String(elapsedTime));
+
+          await fetch('/api/recordings', { method: 'POST', body: formData })
+            .catch(e => console.error("Audio block failed to upload on exit", e));
+        }
+      }
+
+      window.location.href = '/dashboard';
     }
   };
 
@@ -321,7 +334,7 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
 
       setMessages([initialMessage]);
       setQuestionCount(1);
-      
+
       // Speak the initial question
       speakText(data.data.question);
     } catch (err) {
@@ -392,7 +405,7 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
 
       setMessages([...updatedMessages, assistantMessage]);
       setQuestionCount(questionCount + 1);
-      
+
       // Speak the new question
       speakText(questionData.data.question);
     } catch (err) {
@@ -408,44 +421,39 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
     try {
       setIsLoading(true);
       setIsEvaluating(true);
-      
+
       // Stop camera when interview completes
       await stopCamera();
-      
-      const evaluationResponse = await fetch('/api/evaluate-interview', {
+
+      // Fallback safely to extract sessionId from query if available, or sessionCache
+      const currentParams = new URLSearchParams(window.location.search);
+      const resolvedSessionId = currentParams.get('sessionId') || sessionStorage.getItem('sessionId') || '';
+
+      // Async Dispatch!
+      await fetch('/api/trigger-evaluation', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          sessionId: resolvedSessionId,
           resumeData,
           targetRole,
           conversationHistory: conversationMessages,
         }),
-      });
+      }).catch(console.error);
 
-      if (!evaluationResponse.ok) {
-        throw new Error('Failed to evaluate interview');
+      // Send the Audio file up to Supabase natively
+      if (audioChunksRef.current && audioChunksRef.current.length > 0) {
+        const formData = new FormData();
+        const blob = new Blob(audioChunksRef.current, { type: 'video/webm' });
+        formData.append('file', blob, 'session_recording.webm');
+        formData.append('sessionId', resolvedSessionId);
+        formData.append('duration', String(elapsedTime));
+
+        await fetch('/api/recordings', { method: 'POST', body: formData }).catch(e => console.error("Audio block failed to upload", e));
       }
 
-      const evaluationData: ApiResponse<InterviewEvaluation> = await evaluationResponse.json();
-      if (!evaluationData.success || !evaluationData.data) {
-        throw new Error(evaluationData.error || 'Invalid evaluation response');
-      }
-
-      // Convert audio to MP3 data URL and store in sessionStorage
-      const audioData = await convertWebMToMP3();
-      
-      // Store evaluation in sessionStorage
-      sessionStorage.setItem('evaluation', JSON.stringify(evaluationData.data));
-      sessionStorage.setItem('interviewSetup', JSON.stringify({
-        resumeData,
-        targetRole,
-      }));
-      sessionStorage.setItem('audioRecording', audioData);
-
-      // Navigate to report page
-      window.location.href = '/report';
-      
-      onInterviewComplete(evaluationData.data);
+      // Seamlessly kick client onto Dashboard exactly like specified, no downloading loops
+      window.location.href = '/dashboard';
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to evaluate interview';
       setError(errorMessage);
@@ -495,20 +503,19 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
           {messages.map((message, index) => {
             // Show streaming text for the last assistant message
-            const isLastAssistantMessage = 
-              index === messages.length - 1 && 
-              message.role === 'assistant' && 
-              isSpeaking && 
+            const isLastAssistantMessage =
+              index === messages.length - 1 &&
+              message.role === 'assistant' &&
+              isSpeaking &&
               streamingText;
 
             return (
               <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div
-                  className={`max-w-lg px-4 py-3 rounded-lg ${
-                    message.role === 'user'
-                      ? 'bg-blue-600 text-white rounded-br-none'
-                      : 'bg-gray-100 text-gray-800 rounded-bl-none'
-                  }`}
+                  className={`max-w-lg px-4 py-3 rounded-lg ${message.role === 'user'
+                    ? 'bg-blue-600 text-white rounded-br-none'
+                    : 'bg-gray-100 text-gray-800 rounded-bl-none'
+                    }`}
                 >
                   <p className="text-sm whitespace-pre-wrap">
                     {isLastAssistantMessage ? streamingText : message.content}
@@ -520,7 +527,7 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
               </div>
             );
           })}
-          
+
           {/* Show interim transcript while listening */}
           {isListening && interimTranscript && (
             <div className="flex justify-end">
@@ -564,6 +571,17 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
                 className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100"
               />
 
+              {/* Mic Toggle Button Native */}
+              <button
+                type="button"
+                onClick={toggleListening}
+                disabled={isLoading || isSpeaking}
+                className={`${isListening ? 'bg-red-500 hover:bg-red-600' : 'bg-gray-600 hover:bg-gray-700'} disabled:bg-gray-400 text-white font-bold py-3 px-4 rounded-lg transition min-w-[140px] flex items-center justify-center`}
+                title="Toggle Microphone"
+              >
+                {isListening ? '🛑 Stop Mic' : '🎤 Start Mic'}
+              </button>
+
               {/* Speaker Button */}
               <button
                 type="button"
@@ -571,17 +589,15 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
                   const lastAssistantMessage = [...messages]
                     .reverse()
                     .find((m) => m.role === 'assistant');
-                  if (lastAssistantMessage) {
-                    speakText(lastAssistantMessage.content);
-                  }
+                  if (lastAssistantMessage) speakText(lastAssistantMessage.content);
                 }}
                 disabled={isLoading || isSpeaking}
-                className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-bold py-3 px-4 rounded-lg transition"
+                className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-bold py-3 px-4 rounded-lg transition min-w-[140px] flex items-center justify-center"
                 title="Repeat question"
               >
-                🔊 {isSpeaking ? 'Speaking' : 'Speak'}
+                <span>🔊 {isSpeaking ? 'Speaking' : 'Speak'}</span>
               </button>
-              
+
               <button
                 type="submit"
                 disabled={!userInput.trim() || isLoading}
@@ -613,25 +629,23 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
         )}
       </div>
 
-      {/* Camera Feed - Right Side (Fixed/Sticky) */}
-      {cameraActive && (
-        <div className="w-80 bg-black border-l border-gray-300 flex flex-col items-center justify-start p-4 sticky top-0 right-0">
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className="rounded-lg w-full h-80 object-cover border-4 border-green-500"
-          />
-          <div className="mt-4 text-white w-full text-center">
-            <div className="flex items-center justify-center gap-2 mb-2">
-              <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>
-              <span className="text-sm font-semibold">Recording</span>
-            </div>
-            <p className="text-xs text-gray-300">Camera Active</p>
+      {/* Camera Feed - Right Side (Always physically mounted to protect refs) */}
+      <div className={`w-80 bg-black border-l border-gray-300 flex flex-col items-center justify-start p-4 sticky top-0 right-0 ${!cameraActive && 'hidden'}`}>
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          className="rounded-lg w-full h-80 object-cover border-4 border-green-500"
+        />
+        <div className="mt-4 text-white w-full text-center">
+          <div className="flex items-center justify-center gap-2 mb-2">
+            <span className="w-3 h-3 bg-red-500 rounded-full animate-pulse"></span>
+            <span className="text-sm font-semibold">Recording</span>
           </div>
+          <p className="text-xs text-gray-300">Camera Active</p>
         </div>
-      )}
+      </div>
     </div>
   );
 };

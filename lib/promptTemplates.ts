@@ -188,10 +188,34 @@ Begin with a warm, professional greeting and a brief overview of the interview p
 Keep it conversational and encouraging.`;
 }
 
+/**
+ * Prompt for optionally refining/generating detailed narrative email feedback natively 
+ */
+export function getEmailRefinementPrompt(
+  candidateName: string,
+  role: string,
+  overallScore: number,
+  strengths: string[],
+  weaknesses: string[],
+  recommendations: string[]
+): string {
+  return `You are an expert technical recruiter analyzing an AI mock interview.
+Review the following computed session metrics:
+- Candidate Name: ${candidateName}
+- Target Role: ${role}
+- Overall AI Score: ${overallScore}/10
+- Analyzed Strengths: ${strengths.join(", ")}
+- Identified Weaknesses: ${weaknesses.join(", ")}
+- Structured Recommendations: ${recommendations.join(", ")}
+
+Write a highly personalized, empathetic, and professional 3-paragraph email summarizing their performance, praising their strengths, and offering actionable guidance on how they can improve their highlighted weaknesses before their real technical interview. Return ONLY the refined email text without any intro or JSON markers.`;
+}
+
 export default {
   getResumeParsingPrompt,
   getInterviewSystemPrompt,
   getEvaluationPrompt,
   getFollowUpQuestionPrompt,
   getWarmUpPrompt,
+  getEmailRefinementPrompt,
 };

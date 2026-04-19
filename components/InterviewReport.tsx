@@ -9,12 +9,13 @@ import React, { useState } from 'react';
 import { InterviewEvaluation } from '@/types/interview';
 import jsPDF from 'jspdf';
 import 'jspdf-autotable';
+import { getLocalAudio } from '@/lib/storage';
 
 interface InterviewReportProps {
   candidateName: string;
   targetRole: string;
   evaluation: InterviewEvaluation;
-  onRestart: () => void;
+  onRestart?: () => void;
   recordedChunks?: Blob[];
 }
 
@@ -27,15 +28,16 @@ const InterviewReport: React.FC<InterviewReportProps> = ({
 }) => {
   const [isDownloading, setIsDownloading] = useState(false);
 
-  const downloadRecording = () => {
+  const downloadRecording = async () => {
     try {
-      const audioData = sessionStorage.getItem('audioRecording');
+      setIsDownloading(true);
+      const audioData = await getLocalAudio();
+      
       if (!audioData) {
         alert('No audio recording found');
+        setIsDownloading(false);
         return;
       }
-
-      setIsDownloading(true);
 
       // Convert data URL to blob
       const arr = audioData.split(',');
@@ -179,8 +181,8 @@ const InterviewReport: React.FC<InterviewReportProps> = ({
       doc.setFontSize(10);
       yPosition = addWrappedText(evaluation.feedbackSummary, margin, yPosition, pageWidth - 2 * margin);
 
-      // Download PDF
-      doc.save(`interview-report-${candidateName.replace(/\s+/g, '-')}.pdf`);
+      // Download PDF structurally uniquely
+      doc.save(`interview-report-${candidateName.replace(/\s+/g, '-')}-${Date.now()}.pdf`);
     } catch (error) {
       console.error('Error generating PDF:', error);
       alert('Failed to download PDF');
@@ -319,7 +321,7 @@ const InterviewReport: React.FC<InterviewReportProps> = ({
           {isDownloading ? 'Downloading...' : '🎙️ Download Audio Recording'}
         </button>
         <button
-          onClick={onRestart}
+          onClick={onRestart || (() => window.location.href = '/')}
           className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-8 rounded-lg transition"
         >
           Start New Interview

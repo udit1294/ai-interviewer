@@ -43,17 +43,46 @@ export default function InterviewPage() {
     setStep('ready');
   };
 
-  const handleStartInterview = () => {
-    // Store interview setup in session
-    sessionStorage.setItem(
-      'interviewSetup',
-      JSON.stringify({
-        resumeData,
-        targetRole: selectedRole,
-        jobDescription,
-      })
-    );
-    router.push('/chat');
+  const handleStartInterview = async () => {
+    const resumeId = sessionStorage.getItem('resumeId');
+    if (!resumeId) {
+      alert("Resume ID completely missing! Please upload your resume again.");
+      return;
+    }
+    
+    try {
+      // Create Database Session securely
+      const res = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          resumeId,
+          role: selectedRole,
+          difficultyLevel: 'MID', // Matches enum ['ENTRY', 'MID', 'SENIOR']
+          maxQuestions: 5
+        })
+      });
+      
+      if (!res.ok) throw new Error("Failed to create Interview Session");
+      const sessionData = await res.json();
+      
+      sessionStorage.setItem('sessionId', sessionData.id);
+      
+      // Store visual interview setup in session for quick reference
+      sessionStorage.setItem(
+        'interviewSetup',
+        JSON.stringify({
+          resumeData,
+          targetRole: selectedRole,
+          jobDescription,
+        })
+      );
+      
+      router.push(`/chat?sessionId=${sessionData.id}`);
+    } catch (e) {
+       console.error("Failed to jump into interview session:", e);
+       alert("Failed to start session. Check console log.");
+    }
   };
 
   const handleGoBack = () => {

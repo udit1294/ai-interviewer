@@ -57,15 +57,15 @@ export default async function handler(
     // Parse JSON response
     const evaluation = parseJSONResponse(response) as InterviewEvaluation;
 
-    // Validate response structure
-    if (
-      !evaluation.technicalSkillsScore ||
-      !evaluation.communicationScore ||
-      !evaluation.problemSolvingScore ||
-      !evaluation.recommendation
-    ) {
-      throw new Error('Invalid evaluation response structure');
-    }
+    // Format and Ensure response defaults exist safely
+    evaluation.technicalSkillsScore = evaluation.technicalSkillsScore || 0;
+    evaluation.communicationScore = evaluation.communicationScore || 0;
+    evaluation.problemSolvingScore = evaluation.problemSolvingScore || 0;
+    evaluation.overallScore = evaluation.overallScore || 0;
+    evaluation.roleAlignmentScore = evaluation.roleAlignmentScore || 0;
+    evaluation.recommendation = evaluation.recommendation || 'No Hire';
+    evaluation.strengths = evaluation.strengths || [];
+    evaluation.weaknesses = evaluation.weaknesses || [];
 
     return res.status(200).json({
       success: true,

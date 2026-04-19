@@ -10,7 +10,7 @@ import { ParsedResume, ApiResponse } from '@/types/interview';
 import Loader from './Loader';
 
 interface ResumeUploadProps {
-  onResumeLoaded: (resumeData: ParsedResume) => void;
+  onResumeLoaded: (resumeData: ParsedResume, resumeId: string) => void;
   isLoading?: boolean;
 }
 
@@ -60,7 +60,7 @@ const ResumeUpload: React.FC<ResumeUploadProps> = ({ onResumeLoaded, isLoading =
       const formData = new FormData();
       formData.append('file', file);
 
-      const extractResponse = await fetch('/api/parse-resume', {
+      const extractResponse = await fetch('/api/resumes', {
         method: 'POST',
         body: formData,
       });
@@ -70,12 +70,13 @@ const ResumeUpload: React.FC<ResumeUploadProps> = ({ onResumeLoaded, isLoading =
         throw new Error(errorData.error || 'Failed to parse resume');
       }
 
-      const extractData: ApiResponse<{ text: string }> = await extractResponse.json();
-      if (!extractData.success || !extractData.data) {
+      const dbResume = await extractResponse.json();
+      if (!dbResume || !dbResume.parsedData || !dbResume.parsedData.text) {
         throw new Error('Invalid response from parse-resume');
       }
 
-      const resumeText = extractData.data.text;
+      const resumeText = dbResume.parsedData.text;
+      const resumeId = dbResume.id; // Extract SQL identity
 
       // Step 2: Send resume text to AI for parsing
       const parseResponse = await fetch('/api/parse-resume-ai', {
@@ -95,7 +96,7 @@ const ResumeUpload: React.FC<ResumeUploadProps> = ({ onResumeLoaded, isLoading =
       }
 
       setSuccess(`Resume loaded successfully! Welcome, ${parseData.data.name}!`);
-      onResumeLoaded(parseData.data);
+      onResumeLoaded(parseData.data, resumeId);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An error occurred';
       setError(errorMessage);

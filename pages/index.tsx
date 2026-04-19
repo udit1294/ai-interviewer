@@ -15,12 +15,13 @@ export default function Home() {
   const [resumeData, setResumeData] = useState<ParsedResume | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleResumeLoaded = async (resume: ParsedResume) => {
+  const handleResumeLoaded = async (resume: ParsedResume, resumeId: string) => {
     setIsLoading(true);
     setResumeData(resume);
 
-    // Store resume data in session/localStorage for next page
+    // Store resume data and ID in sessionStorage for next page
     sessionStorage.setItem('resumeData', JSON.stringify(resume));
+    sessionStorage.setItem('resumeId', resumeId);
 
     // Redirect to interview setup page
     setTimeout(() => {

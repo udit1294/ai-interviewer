@@ -1,0 +1,199 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// Enums
+enum InterviewStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+enum DifficultyLevel {
+  ENTRY
+  MID
+  SENIOR
+}
+
+enum RecordingFormat {
+  WEBM
+  MP3
+  WAV
+}
+
+// User Model
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  name          String?
+  password      String?
+  emailVerified DateTime?
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  // Relations
+  accounts          Account[]
+  sessions          Session[]
+  resumes           Resume[]
+  interviewSessions InterviewSession[]
+
+  @@map("users")
+}
+
+// NextAuth Required Models
+model Account {
+  id                 String  @id @default(cuid())
+  userId             String
+  type               String
+  provider           String
+  providerAccountId  String
+  refresh_token      String?  @db.Text
+  access_token       String?  @db.Text
+  expires_at         Int?
+  token_type         String?
+  scope              String?
+  id_token           String?  @db.Text
+  session_state      String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// Resume Model
+model Resume {
+  id         String   @id @default(cuid())
+  userId     String
+  fileUrl    String
+  parsedData Json? // Stores parsed resume data as JSON
+  createdAt  DateTime @default(now())
+
+  // Relations
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  interviewSessions InterviewSession[]
+
+  @@index([userId])
+  @@map("resumes")
+}
+
+// Interview Session Model
+model InterviewSession {
+  id              String          @id @default(cuid())
+  userId          String
+  resumeId        String
+  role            String // Position title
+  company         String? // Company name
+  jobDescription  String? // Full job description
+  difficultyLevel DifficultyLevel @default(MID) // Entry/Mid/Senior
+  status          InterviewStatus @default(IN_PROGRESS)
+  startedAt       DateTime        @default(now())
+  endedAt         DateTime?
+  totalDuration   Int? // Duration in seconds
+  overallScore    Float? // Overall interview score (0-100)
+  feedbackSummary String? // General feedback
+  maxQuestions    Int             @default(5) // Dynamic based on experience
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  // Relations
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  resume            Resume             @relation(fields: [resumeId], references: [id], onDelete: Cascade)
+  questionResponses QuestionResponse[]
+  recording         Recording?
+  evaluationReport  EvaluationReport?
+
+  @@index([userId])
+  @@index([resumeId])
+  @@index([status])
+  @@map("interview_sessions")
+}
+
+// Question Response Model
+model QuestionResponse {
+  id             String   @id @default(cuid())
+  sessionId      String
+  questionNumber Int // Question sequence number
+  question       String // The AI-asked question
+  answer         String // User's response
+  score          Float? // Individual question score (0-100)
+  feedback       String? // AI feedback on this specific response
+  responseTime   Int? // Time taken to respond in seconds
+  createdAt      DateTime @default(now())
+
+  // Relations
+  session InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("question_responses")
+}
+
+// Recording Model
+model Recording {
+  id        String          @id @default(cuid())
+  sessionId String          @unique
+  fileUrl   String // Path or URL to the recording file
+  duration  Int // Duration in seconds
+  format    RecordingFormat @default(WEBM)
+  fileSize  Int? // File size in bytes
+  createdAt DateTime        @default(now())
+
+  // Relations
+  session InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("recordings")
+}
+
+// Evaluation Report Model
+model EvaluationReport {
+  id                  String   @id @default(cuid())
+  sessionId           String   @unique
+  technicalScore      Float // Technical knowledge score
+  communicationScore  Float // Communication clarity score
+  problemSolvingScore Float // Problem-solving approach score
+  confidenceScore     Float // Confidence level score
+  overallScore        Float // Final overall score
+  strengths           String[] // Array of strengths
+  weaknesses          String[] // Array of weaknesses
+  recommendations     String[] // Array of recommendations
+  detailedFeedback    Json? // Detailed feedback as JSON
+  interviewerComments String? // Optional additional comments
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  // Relations
+  session InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId])
+  @@map("evaluation_reports")
+}
