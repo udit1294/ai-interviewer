@@ -2,18 +2,20 @@ import React from "react";
 import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { redirect } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
 
 import RecordingPlayer from "@/components/RecordingPlayer";
 import InterviewReport from "@/components/InterviewReport";
 
-export default async function SessionDetailPage({ params }: { params: { id: string } }) {
+export default async function SessionDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
   const sessionAuth = await getAuthSession();
   if (!sessionAuth?.user) redirect("/login");
 
   const sessionData = await prisma.interviewSession.findFirst({
-    where: { id: params.id, userId: sessionAuth.user.id },
+    where: { id: id, userId: sessionAuth.user.id },
     include: {
       evaluationReport: true,
       resume: true,
@@ -45,7 +47,20 @@ export default async function SessionDetailPage({ params }: { params: { id: stri
     interviewerNotes: sessionData.evaluationReport.interviewerComments || "",
   };
 
-  const recordingUrl = sessionData.recording ? sessionData.recording.fileUrl : null;
+  // Reconstruct Secure Path using dynamic SignedUrl magically organically gracefully!
+  let recordingUrl = null;
+  if (sessionData.recording?.fileUrl) {
+    if (sessionData.recording.fileUrl.startsWith('http')) {
+      // Legacy compatibility for old recordings already uploaded publicly
+      recordingUrl = sessionData.recording.fileUrl;
+    } else {
+      // Issue secure playback token dynamically!
+      const { data } = await supabase.storage
+         .from(process.env.NEXT_PUBLIC_SUPABASE_BUCKET || "ai_interviewer_assets")
+         .createSignedUrl(sessionData.recording.fileUrl, 3600);
+      recordingUrl = data?.signedUrl || null;
+    }
+  }
 
   return (
     <div>

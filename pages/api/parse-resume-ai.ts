@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger";
 /**
  * API Route: Parse Resume with AI
  * Sends extracted resume text to Gemini for structured parsing
@@ -72,7 +73,7 @@ export default async function handler(
       data: normalizedResume,
     });
   } catch (error) {
-    console.error('Error parsing resume with AI:', error);
+    logger.error('Error parsing resume with AI:', error);
     return res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to parse resume',

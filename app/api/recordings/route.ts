@@ -1,26 +1,29 @@
+import { logger } from "@/lib/logger";
 import { NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { createRecordingSchema } from "@/lib/validators";
 import { z } from "zod";
+import { StandardError } from "@/lib/api-response";
+import { supabase } from "@/lib/supabase";
 
 export async function POST(req: Request) {
   try {
     const session = await getAuthSession();
     if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return StandardError(401, "Unauthorized");
     }
 
-    const formData = await req.formData();
-    const sessionId = formData.get("sessionId") as string;
-    const durationStr = formData.get("duration") as string;
-    const file = formData.get("file") as File | null;
+    const { sessionId, duration: durationRaw, fileSize, fileType } = await req.json();
 
-    if (!sessionId || !file) {
-      return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
+    if (!sessionId) {
+      return StandardError(400, "Missing sessionId");
     }
 
-    const duration = durationStr ? parseInt(durationStr, 10) : 0;
+    if (fileType && !fileType.startsWith('video/') && !fileType.startsWith('audio/')) {
+       return StandardError(400, "Invalid media format natively natively logically");
+    }
+
+    const duration = durationRaw ? parseInt(durationRaw, 10) : 0;
 
     // Verify session belongs to user
     const interviewSession = await prisma.interviewSession.findUnique({
@@ -29,49 +32,46 @@ export async function POST(req: Request) {
     });
 
     if (!interviewSession) {
-      return NextResponse.json({ error: "Session not found" }, { status: 404 });
+      return StandardError(404, "Session not found");
     }
 
     if (interviewSession.userId !== session.user.id) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      return StandardError(403, "Forbidden");
     }
 
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-
-    // Provide a uniquely identifiable file name
+    // Provide a uniquely identifiable secure bucket path
     const filePath = `recordings/${session.user.id}/${sessionId}_${Date.now()}.webm`;
 
-    const { data: uploadData, error: uploadError } = await supabase.storage
-      .from((process.env.NEXT_PUBLIC_SUPABASE_BUCKET || "ai_interviewer_assets"))
-      .upload(filePath, buffer, {
-        contentType: file.type || 'audio/webm',
-        upsert: true,
-      });
-
-    if (uploadError) {
-      console.error("Supabase Upload Error:", uploadError);
-      throw new Error("Failed to upload recording to storage");
-    }
-
-    // Get public URL
-    const { data: publicUrlData } = supabase.storage
-      .from((process.env.NEXT_PUBLIC_SUPABASE_BUCKET || "ai_interviewer_assets"))
-      .getPublicUrl(filePath);
-
+    // 1. Instantly register the DB record strictly to map the internal Path
     const recording = await prisma.recording.create({
       data: {
         sessionId,
-        fileUrl: publicUrlData.publicUrl,
+        fileUrl: filePath, // Storing STRICT internal structure instead of naked http links seamlessly
         duration,
         format: "WEBM",
-        fileSize: file.size,
+        fileSize: fileSize || 0,
       }
     });
 
-    return NextResponse.json(recording, { status: 201 });
+    // 2. Generate the Supabase Direct Upload URL mechanically
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from((process.env.NEXT_PUBLIC_SUPABASE_BUCKET || "ai_interviewer_assets"))
+      .createSignedUploadUrl(filePath);
+
+    if (uploadError || !uploadData?.signedUrl) {
+      logger.error("Supabase Native Signed URL Error:", uploadError);
+      return StandardError(500, "Failed to provision upload node");
+    }
+
+    // 3. Return strictly to client, offloading the physical file transmission perfectly cleanly natively!
+    return NextResponse.json({ 
+       success: true, 
+       recordingId: recording.id, 
+       uploadUrl: uploadData.signedUrl 
+    }, { status: 201 });
+    
   } catch (error) {
-    console.error("RECORDING_POST_ERROR", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    logger.error("RECORDING_POST_ERROR", error);
+    return StandardError(500, "Internal Server Error", error);
   }
 }

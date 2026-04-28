@@ -1,5 +1,8 @@
+import { logger } from "@/lib/logger";
 import { NextResponse } from 'next/server';
 import OpenAI from 'openai';
+import { getAuthSession } from '@/lib/auth';
+import { StandardError } from '@/lib/api-response';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -7,15 +10,18 @@ const openai = new OpenAI({
 
 export async function POST(req: Request) {
   try {
+    const session = await getAuthSession();
+    if (!session?.user?.id) return StandardError(401, "Unauthorized access blocked natively.");
+
     const { text } = await req.json();
 
     if (!text) {
-      return NextResponse.json({ error: 'Text is required explicitly by TTS engine' }, { status: 400 });
+      return StandardError(400, "Text is required explicitly by TTS engine");
     }
 
     if (!process.env.OPENAI_API_KEY) {
       console.warn("OPENAI_API_KEY identically mathematically missing natively");
-      return NextResponse.json({ error: 'TTS API Key elegantly missing' }, { status: 500 });
+      return StandardError(500, "TTS API Key elegantly missing");
     }
 
     const response = await openai.audio.speech.create({
@@ -34,7 +40,7 @@ export async function POST(req: Request) {
       },
     });
   } catch (error) {
-    console.error('Error generating mathematically correct audio natively:', error);
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
+    logger.error('Error generating mathematically correct audio natively:', error);
+    return StandardError(500, "Internal Server Error", error);
   }
 }

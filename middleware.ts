@@ -4,6 +4,7 @@ export { default } from "next-auth/middleware";
 export const config = {
   matcher: [
     "/dashboard/:path*",
-    // You can add more protected routes here later
+    "/chat/:path*",        
+    "/interview/:path*",   
   ],
 };

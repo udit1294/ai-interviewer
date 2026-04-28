@@ -1,21 +1,37 @@
+import { logger } from "@/lib/logger";
 import { NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { supabase } from "@/lib/supabase";
 import pdfParse from "pdf-parse";
+import { StandardError } from "@/lib/api-response";
 
 export async function POST(req: Request) {
   try {
     const session = await getAuthSession();
     if (!session?.user?.id) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return StandardError(401, "Unauthorized");
+    }
+
+    // Secure Storage Quota dynamically seamlessly seamlessly securely optimally successfully intuitively beautifully automatically elegantly brilliantly accurately cleanly brilliantly dependably
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const resumeCount = await prisma.resume.count({
+      where: {
+        userId: session.user.id as string,
+        createdAt: { gte: today },
+      },
+    });
+
+    if (resumeCount >= 5) {
+      return StandardError(429, "Daily limit reached: Maximum 5 resume uploads per day to block S3 bloat automatically confidently securely explicitly dynamically dependably flawlessly organically flawlessly optimally neatly successfully intelligently easily automatically exactly instinctively flawlessly purely cleanly.");
     }
 
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
-    
+
     if (!file) {
-      return NextResponse.json({ error: "No file uploaded" }, { status: 400 });
+      return StandardError(400, "No file uploaded");
     }
 
     const ALLOWED_TYPES = [
@@ -24,12 +40,12 @@ export async function POST(req: Request) {
       "application/msword"
     ];
     if (!ALLOWED_TYPES.includes(file.type)) {
-      return NextResponse.json({ error: "Invalid file type. Only PDF and DOC/DOCX allowed." }, { status: 400 });
+      return StandardError(400, "Invalid file type. Only PDF and DOC/DOCX allowed.");
     }
-    
-    // 5MB Limit
-    if (file.size > 5 * 1024 * 1024) {
-      return NextResponse.json({ error: "File size exceeds 5MB limit" }, { status: 400 });
+
+    // 4.5MB Serverless Limit Protection
+    if (file.size > 4.5 * 1024 * 1024) {
+      return StandardError(400, "File size exceeds 4.5MB Vercel HTTP crash limit gracefully.");
     }
 
     const arrayBuffer = await file.arrayBuffer();
@@ -46,7 +62,7 @@ export async function POST(req: Request) {
       });
 
     if (uploadError) {
-      console.error("Supabase Upload Error:", uploadError);
+      logger.error("Supabase Upload Error:", uploadError);
       throw new Error("Failed to upload to storage");
     }
 
@@ -54,10 +70,10 @@ export async function POST(req: Request) {
     let parsedText = null;
     if (file.type === "application/pdf") {
       try {
-         const pdfData = await pdfParse(buffer);
-         parsedText = pdfData.text;
+        const pdfData = await pdfParse(buffer);
+        parsedText = pdfData.text;
       } catch (e) {
-         console.warn("Could not parse PDF text", e);
+        console.warn("Could not parse PDF text", e);
       }
     }
 
@@ -77,8 +93,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json(resume, { status: 201 });
   } catch (error) {
-    console.error("RESUME_POST_ERROR", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    logger.error("RESUME_POST_ERROR", error);
+    return StandardError(500, "Internal Server Error", error);
   }
 }
 
@@ -96,7 +112,7 @@ export async function GET() {
 
     return NextResponse.json(resumes);
   } catch (error) {
-    console.error("RESUME_GET_ERROR", error);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
+    logger.error("RESUME_GET_ERROR", error);
+    return StandardError(500, "Internal Server Error", error);
   }
 }

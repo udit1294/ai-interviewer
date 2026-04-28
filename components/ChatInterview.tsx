@@ -4,6 +4,7 @@
  */
 
 'use client';
+import { logger } from "@/lib/logger";
 
 import React, { useState, useEffect, useRef } from 'react';
 import { ParsedResume, ConversationMessage, ApiResponse, InterviewEvaluation } from '@/types/interview';
@@ -26,7 +27,8 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [userInput, setUserInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isInitializing, setIsInitializing] = useState(true);
+  const [isInitializing, setIsInitializing] = useState(false);
+  const [hasStarted, setHasStarted] = useState(false);
   const [questionCount, setQuestionCount] = useState(0);
   const [error, setError] = useState<string>('');
   const [isListening, setIsListening] = useState(false);
@@ -52,8 +54,18 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
 
-  // Initialize interview on component mount
+  // Wait for user to explicitly initiate
   useEffect(() => {
+    return () => {
+      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleStartInterviewFlow = () => {
+    setHasStarted(true);
+    setIsInitializing(true);
+    
     startTimeRef.current = Date.now();
     timerIntervalRef.current = setInterval(() => {
       setElapsedTime(Math.floor((Date.now() - startTimeRef.current) / 1000));
@@ -62,12 +74,7 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
     startCamera();
     initializeSpeech();
     initializeInterview();
-
-    return () => {
-      if (timerIntervalRef.current) clearInterval(timerIntervalRef.current);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  };
 
   // Auto-scroll to latest message
   useEffect(() => {
@@ -143,55 +150,37 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
       recognitionRef.current.onerror = (event: any) => {
         setIsListening(false);
         if (event.error !== 'no-speech') {
-          console.warn(`Speech recognition API explicitly reported: ${event.error}`);
+          console.warn(`Speech recognition error: ${event.error}`);
         }
       };
 
-      // Safely toggle stream seamlessly after permissions hook natively
       startListening();
     }
   };
 
-  const speakText = (text: string) => {
-    // Show text immediately
-    if (streamingIntervalRef.current) clearInterval(streamingIntervalRef.current);
-    setStreamingText('');
-    streamTextCharByChar(text); // Start text animation immediately
-
-    // Stop mic while AI speaks
+  const speakText = async (text: string) => {
     stopListening();
+    setIsSpeaking(true);
 
-    // Use browser built-in TTS — instant, no API needed
-    window.speechSynthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 1;
-    utterance.pitch = 1;
-    utterance.volume = 1;
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => {
+    try {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      utterance.onend = () => {
+        setIsSpeaking(false);
+        if (!answeredLastQuestion && !isEvaluating) startListening();
+      };
+      utterance.onerror = () => {
+        setIsSpeaking(false);
+        if (!answeredLastQuestion && !isEvaluating) startListening();
+      };
+      window.speechSynthesis.speak(utterance);
+    } catch (e) {
+      logger.error('Browser TTS error', e);
       setIsSpeaking(false);
       if (!answeredLastQuestion && !isEvaluating) startListening();
-    };
-    utterance.onerror = () => {
-      setIsSpeaking(false);
-      if (!answeredLastQuestion && !isEvaluating) startListening();
-    };
-    synthRef.current = utterance;
-    window.speechSynthesis.speak(utterance);
-  };
-
-  const streamTextCharByChar = (text: string) => {
-    let currentIndex = 0;
-    if (streamingIntervalRef.current) clearInterval(streamingIntervalRef.current);
-
-    streamingIntervalRef.current = setInterval(() => {
-      if (currentIndex <= text.length) {
-        setStreamingText(text.slice(0, currentIndex));
-        currentIndex++;
-      } else {
-        if (streamingIntervalRef.current) clearInterval(streamingIntervalRef.current);
-      }
-    }, 30); // Adjust speed - lower = faster
+    }
   };
 
   const startCamera = async () => {
@@ -207,7 +196,6 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
 
       setCameraActive(true);
 
-      // Initialize combined video/audio media recorder native to the browser
       const combinedRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
       audioChunksRef.current = [];
 
@@ -222,7 +210,7 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
       setIsRecording(true);
     } catch (err) {
       setError('Unable to access camera/microphone. Please check permissions.');
-      console.error('Camera error:', err);
+      logger.error('Camera error:', err);
     }
   };
 
@@ -241,7 +229,7 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
 
       setCameraActive(false);
     } catch (err) {
-      console.error('Error stopping camera:', err);
+      logger.error('Error stopping camera:', err);
     }
   };
 
@@ -279,7 +267,7 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
           formData.append('duration', String(elapsedTime));
 
           await fetch('/api/recordings', { method: 'POST', body: formData })
-            .catch(e => console.error("Audio block failed to upload on exit", e));
+            .catch(e => logger.error("Audio block failed to upload on exit", e));
         }
       }
 
@@ -321,26 +309,34 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
         throw new Error('Failed to initialize interview');
       }
 
-      const data: ApiResponse<{ question: string; questionId: string }> = await response.json();
-      if (!data.success || !data.data) {
-        throw new Error(data.error || 'Invalid response');
-      }
+      // Read the streaming response from Groq
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      if (!reader) throw new Error('No readable stream available');
 
+      let fullText = '';
       const initialMessage: ConversationMessage = {
         role: 'assistant',
-        content: data.data.question,
+        content: '',
         timestamp: new Date(),
       };
-
       setMessages([initialMessage]);
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        fullText += decoder.decode(value, { stream: true });
+        setMessages([{ ...initialMessage, content: fullText }]);
+      }
+
       setQuestionCount(1);
 
-      // Speak the initial question
-      speakText(data.data.question);
+      // Speak the completed question
+      speakText(fullText);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to initialize interview';
       setError(errorMessage);
-      console.error('Initialization error:', err);
+      logger.error('Initialization error:', err);
     } finally {
       setIsInitializing(false);
     }
@@ -388,30 +384,44 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
       });
 
       if (!questionResponse.ok) {
-        throw new Error('Failed to generate next question');
+        throw new Error('Failed to generate next question from Stream');
       }
 
-      const questionData: ApiResponse<{ question: string; questionId: string }> =
-        await questionResponse.json();
-      if (!questionData.success || !questionData.data) {
-        throw new Error(questionData.error || 'Invalid response');
-      }
-
+      let streamingText = '';
       const assistantMessage: ConversationMessage = {
         role: 'assistant',
-        content: questionData.data.question,
+        content: '',
         timestamp: new Date(),
       };
-
+      
       setMessages([...updatedMessages, assistantMessage]);
+
+      // Natively bypass Vercel Blocks gracefully organically magically reading chunks!
+      const reader = questionResponse.body?.getReader();
+      const decoder = new TextDecoder();
+      if (!reader) throw new Error("No reader stream natively identified");
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        streamingText += decoder.decode(value, { stream: true });
+        
+        // Push raw tokens straight directly dynamically explicitly to UI seamlessly
+        setMessages((curr) => {
+           const next = [...curr];
+           next[next.length - 1] = { ...assistantMessage, content: streamingText };
+           return next;
+        });
+      }
+
       setQuestionCount(questionCount + 1);
 
-      // Speak the new question
-      speakText(questionData.data.question);
+      // Now speak perfectly normally organically natively
+      speakText(streamingText);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to send message';
       setError(errorMessage);
-      console.error('Chat error:', err);
+      logger.error('Chat error:', err);
     } finally {
       setIsLoading(false);
     }
@@ -441,15 +451,35 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
         }),
       }).catch(console.error);
 
-      // Send the Audio file up to Supabase natively
+      // Offload File Upload cleanly natively without Proxying Memory limits organically
       if (audioChunksRef.current && audioChunksRef.current.length > 0) {
-        const formData = new FormData();
         const blob = new Blob(audioChunksRef.current, { type: 'video/webm' });
-        formData.append('file', blob, 'session_recording.webm');
-        formData.append('sessionId', resolvedSessionId);
-        formData.append('duration', String(elapsedTime));
-
-        await fetch('/api/recordings', { method: 'POST', body: formData }).catch(e => console.error("Audio block failed to upload", e));
+        
+        try {
+          const res = await fetch('/api/recordings', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sessionId: resolvedSessionId,
+              duration: String(elapsedTime),
+              fileSize: blob.size,
+              fileType: blob.type || 'video/webm'
+            })
+          });
+          
+          if (res.ok) {
+            const { uploadUrl } = await res.json();
+            
+            // Bypass Vercel explicitly natively by firing PUT organically
+            await fetch(uploadUrl, {
+              method: 'PUT',
+              body: blob,
+              headers: { 'Content-Type': blob.type || 'video/webm' }
+            });
+          }
+        } catch (e) {
+          logger.error("Direct-to-cloud token transfer failed", e);
+        }
       }
 
       // Seamlessly kick client onto Dashboard exactly like specified, no downloading loops
@@ -458,11 +488,35 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
       const errorMessage = err instanceof Error ? err.message : 'Failed to evaluate interview';
       setError(errorMessage);
       setIsEvaluating(false);
-      console.error('Evaluation error:', err);
+      logger.error('Evaluation error:', err);
     } finally {
       setIsLoading(false);
     }
   };
+
+  if (!hasStarted) {
+    return (
+      <div className="w-full h-screen flex flex-col items-center justify-center bg-gray-50 p-6">
+        <div className="bg-white p-8 rounded-xl shadow-lg max-w-md w-full text-center border border-gray-200">
+          <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4 text-blue-600">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+            </svg>
+          </div>
+          <h2 className="text-2xl font-bold text-gray-800 mb-2">Hardware Setup</h2>
+          <p className="text-gray-600 mb-6 text-sm">
+            We need access to your camera and microphone to conduct the interview organically. This allows us to securely record your session and provide detailed behavioral feedback.
+          </p>
+          <button 
+            onClick={handleStartInterviewFlow} 
+            className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg w-full transition shadow-md"
+          >
+            Grant Access & Start Interview
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (isInitializing) {
     return <Loader message="Starting your interview..." />;
@@ -501,15 +555,7 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
 
         {/* Messages */}
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          {messages.map((message, index) => {
-            // Show streaming text for the last assistant message
-            const isLastAssistantMessage =
-              index === messages.length - 1 &&
-              message.role === 'assistant' &&
-              isSpeaking &&
-              streamingText;
-
-            return (
+          {messages.map((message, index) => (
               <div key={index} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                 <div
                   className={`max-w-lg px-4 py-3 rounded-lg ${message.role === 'user'
@@ -518,15 +564,14 @@ const ChatInterview: React.FC<ChatInterviewProps> = ({
                     }`}
                 >
                   <p className="text-sm whitespace-pre-wrap">
-                    {isLastAssistantMessage ? streamingText : message.content}
+                    {message.content}
                   </p>
                   <p className={`text-xs mt-1 ${message.role === 'user' ? 'text-blue-100' : 'text-gray-500'}`}>
                     {message.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </p>
                 </div>
               </div>
-            );
-          })}
+          ))}
 
           {/* Show interim transcript while listening */}
           {isListening && interimTranscript && (

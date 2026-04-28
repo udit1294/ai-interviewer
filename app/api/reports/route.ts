@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger";
 import { NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -55,7 +56,7 @@ export async function POST(req: Request) {
     if (error instanceof z.ZodError) {
       return NextResponse.json({ error: error.errors }, { status: 400 });
     }
-    console.error("REPORT_POST_ERROR", error);
+    logger.error("REPORT_POST_ERROR", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

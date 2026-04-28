@@ -1,10 +1,11 @@
+import { logger } from "@/lib/logger";
 import { NextResponse } from "next/server";
 import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export async function GET(
   req: Request,
-  { params }: { params: { sessionId: string } }
+  { params }: { params: Promise<{ sessionId: string }> }
 ) {
   try {
     const session = await getAuthSession();
@@ -13,7 +14,7 @@ export async function GET(
     }
 
     const interviewSession = await prisma.interviewSession.findUnique({
-      where: { id: params.sessionId },
+      where: { id: (await params).sessionId },
       select: { userId: true },
     });
 
@@ -26,7 +27,7 @@ export async function GET(
     }
 
     const report = await prisma.evaluationReport.findUnique({
-      where: { sessionId: params.sessionId },
+      where: { sessionId: (await params).sessionId },
     });
 
     if (!report) {
@@ -35,7 +36,7 @@ export async function GET(
 
     return NextResponse.json(report);
   } catch (error) {
-    console.error("REPORT_GET_ERROR", error);
+    logger.error("REPORT_GET_ERROR", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
 }

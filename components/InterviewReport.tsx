@@ -4,6 +4,7 @@
  */
 
 'use client';
+import { logger } from "@/lib/logger";
 
 import React, { useState } from 'react';
 import { InterviewEvaluation } from '@/types/interview';
@@ -62,7 +63,7 @@ const InterviewReport: React.FC<InterviewReportProps> = ({
       
       setIsDownloading(false);
     } catch (error) {
-      console.error('Error downloading recording:', error);
+      logger.error('Error downloading recording:', error);
       alert('Failed to download recording');
       setIsDownloading(false);
     }
@@ -184,7 +185,7 @@ const InterviewReport: React.FC<InterviewReportProps> = ({
       // Download PDF structurally uniquely
       doc.save(`interview-report-${candidateName.replace(/\s+/g, '-')}-${Date.now()}.pdf`);
     } catch (error) {
-      console.error('Error generating PDF:', error);
+      logger.error('Error generating PDF:', error);
       alert('Failed to download PDF');
     } finally {
       setIsDownloading(false);

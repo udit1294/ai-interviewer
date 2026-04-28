@@ -49,7 +49,7 @@ export default function InterviewPage() {
       alert("Resume ID completely missing! Please upload your resume again.");
       return;
     }
-    
+
     try {
       // Create Database Session securely
       const res = await fetch('/api/sessions', {
@@ -62,12 +62,12 @@ export default function InterviewPage() {
           maxQuestions: 5
         })
       });
-      
+
       if (!res.ok) throw new Error("Failed to create Interview Session");
       const sessionData = await res.json();
-      
+
       sessionStorage.setItem('sessionId', sessionData.id);
-      
+
       // Store visual interview setup in session for quick reference
       sessionStorage.setItem(
         'interviewSetup',
@@ -77,11 +77,11 @@ export default function InterviewPage() {
           jobDescription,
         })
       );
-      
+
       router.push(`/chat?sessionId=${sessionData.id}`);
     } catch (e) {
-       console.error("Failed to jump into interview session:", e);
-       alert("Failed to start session. Check console log.");
+      console.error("Failed to jump into interview session:", e);
+      alert("Failed to start session. Check console log.");
     }
   };
 
@@ -114,24 +114,22 @@ export default function InterviewPage() {
           {['role', 'job-description', 'ready'].map((s, index) => (
             <div key={s} className="flex items-center flex-1">
               <div
-                className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${
-                  (step === 'role' && s === 'role') ||
-                  (step === 'job-description' && (s === 'role' || s === 'job-description')) ||
-                  (step === 'ready' && true)
+                className={`w-10 h-10 rounded-full flex items-center justify-center font-bold ${(step === 'role' && s === 'role') ||
+                    (step === 'job-description' && (s === 'role' || s === 'job-description')) ||
+                    (step === 'ready' && true)
                     ? 'bg-blue-600 text-white'
                     : 'bg-gray-300 text-gray-700'
-                }`}
+                  }`}
               >
                 {index + 1}
               </div>
               {index < 2 && (
                 <div
-                  className={`flex-1 h-1 mx-2 ${
-                    (step === 'job-description' && index === 0) ||
-                    (step === 'ready' && index < 2)
+                  className={`flex-1 h-1 mx-2 ${(step === 'job-description' && index === 0) ||
+                      (step === 'ready' && index < 2)
                       ? 'bg-blue-600'
                       : 'bg-gray-300'
-                  }`}
+                    }`}
                 ></div>
               )}
             </div>

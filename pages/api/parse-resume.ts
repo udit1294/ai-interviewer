@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger";
 /**
  * API Route: Parse Resume
  * Handles resume file upload and extraction of text
@@ -64,7 +65,7 @@ export default async function handler(
       data: { text },
     });
   } catch (error) {
-    console.error('Error parsing resume:', error);
+    logger.error('Error parsing resume:', error);
     return res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to parse resume',

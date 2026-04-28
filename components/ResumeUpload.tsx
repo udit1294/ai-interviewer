@@ -4,6 +4,7 @@
  */
 
 'use client';
+import { logger } from "@/lib/logger";
 
 import React, { useState } from 'react';
 import { ParsedResume, ApiResponse } from '@/types/interview';
@@ -100,7 +101,7 @@ const ResumeUpload: React.FC<ResumeUploadProps> = ({ onResumeLoaded, isLoading =
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'An error occurred';
       setError(errorMessage);
-      console.error('Upload error:', err);
+      logger.error('Upload error:', err);
     } finally {
       setUploading(false);
     }

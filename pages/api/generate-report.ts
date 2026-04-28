@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger";
 /**
  * API Route: Generate Report
  * Generates a comprehensive PDF report of the interview results
@@ -81,7 +82,7 @@ export default async function handler(
       data: { reportData },
     });
   } catch (error) {
-    console.error('Error generating report:', error);
+    logger.error('Error generating report:', error);
     return res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to generate report',

@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger";
 /**
  * API Route: Evaluate Interview
  * Evaluates candidate responses and generates a comprehensive assessment
@@ -72,7 +73,7 @@ export default async function handler(
       data: evaluation,
     });
   } catch (error) {
-    console.error('Error evaluating interview:', error);
+    logger.error('Error evaluating interview:', error);
     return res.status(500).json({
       success: false,
       error: error instanceof Error ? error.message : 'Failed to evaluate interview',

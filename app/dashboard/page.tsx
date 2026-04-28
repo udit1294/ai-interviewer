@@ -1,7 +1,7 @@
 import React from "react";
 import { getAuthSession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import SessionTable from "@/components/SessionTable";
+import DashboardClientPoller from "@/components/DashboardClientPoller";
 import { redirect } from "next/navigation";
 
 export default async function DashboardPage() {
@@ -27,7 +27,7 @@ export default async function DashboardPage() {
         </div>
       </div>
       
-      <SessionTable sessions={interviewSessions as any} />
+      <DashboardClientPoller initialSessions={interviewSessions as any} />
     </div>
   );
 }
