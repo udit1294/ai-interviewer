@@ -41,7 +41,7 @@ export async function POST(req: Request) {
     return NextResponse.json(interviewSession, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return StandardError(400, "Validation Failed", error.errors);
+      return StandardError(400, "Validation Failed", error.issues);
     }
     logger.error("SESSION_POST_ERROR", error);
     return StandardError(500, "Internal Server Error", error);

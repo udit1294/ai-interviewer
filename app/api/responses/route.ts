@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     return NextResponse.json(questionResponse, { status: 201 });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return NextResponse.json({ error: error.errors }, { status: 400 });
+      return NextResponse.json({ error: error.issues }, { status: 400 });
     }
     logger.error("RESPONSE_POST_ERROR", error);
     return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });

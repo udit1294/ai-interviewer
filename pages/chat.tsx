@@ -45,15 +45,15 @@ export default function ChatPage() {
   // Map the raw DB struct safely to the expected UI prop
   const structuredResumeFallback = {
     name: "Candidate",
-    email: null,
-    phone: null,
-    location: null,
-    skills: [],
+    email: undefined,
+    phone: undefined,
+    location: undefined,
+    skills: [] as string[],
     yearsOfExperience: session.difficultyLevel === 'ENTRY' ? 1 : session.difficultyLevel === 'MID' ? 3 : 5,
-    workExperience: [],
-    projects: [],
-    education: [],
-    certifications: [],
+    workExperience: [] as any[],
+    projects: [] as any[],
+    education: [] as any[],
+    certifications: [] as string[],
     text: session.resume?.parsedData?.text || ""
   };
 

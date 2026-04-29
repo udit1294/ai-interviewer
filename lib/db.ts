@@ -112,7 +112,7 @@ export async function createEvaluationReport(data: {
   strengths: string[];
   weaknesses: string[];
   recommendations: string[];
-  detailedFeedback?: Prisma.JsonValue;
+  detailedFeedback?: Prisma.InputJsonValue;
   interviewerComments?: string;
 }) {
   return await prisma.evaluationReport.create({
@@ -176,7 +176,7 @@ export async function getUserByEmail(email: string) {
 export async function saveResume(data: {
   userId: string;
   fileUrl: string;
-  parsedData?: Prisma.JsonValue;
+  parsedData?: Prisma.InputJsonValue;
 }) {
   return await prisma.resume.create({
     data,

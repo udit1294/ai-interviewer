@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, message: 'Processing dispatched' });
   } catch (error) {
-    logger.error(error);
+    logger.error("TRIGGER_EVALUATION_ERROR", error);
     return StandardError(500, "Internal Trigger Error", error);
   }
 }
