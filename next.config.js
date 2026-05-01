@@ -5,10 +5,18 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  swcMinify: true,
   pageExtensions: ['tsx', 'ts', 'jsx', 'js'],
-  env: {
-    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: 'lh3.googleusercontent.com', // Google profile pictures
+      },
+      {
+        protocol: 'https',
+        hostname: '*.supabase.co', // Supabase storage
+      },
+    ],
   },
 };
 

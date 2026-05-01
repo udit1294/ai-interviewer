@@ -23,8 +23,8 @@ export async function POST(req: Request) {
       },
     });
 
-    if (resumeCount >= 5) {
-      return StandardError(429, "Daily limit reached: Maximum 5 resume uploads per day to block S3 bloat automatically confidently securely explicitly dynamically dependably flawlessly organically flawlessly optimally neatly successfully intelligently easily automatically exactly instinctively flawlessly purely cleanly.");
+    if (resumeCount >= 20) {
+      return StandardError(429, "Daily limit reached: Maximum 20 resume uploads per day.");
     }
 
     const formData = await req.formData();

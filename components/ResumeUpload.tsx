@@ -68,7 +68,7 @@ const ResumeUpload: React.FC<ResumeUploadProps> = ({ onResumeLoaded, isLoading =
 
       if (!extractResponse.ok) {
         const errorData = await extractResponse.json();
-        throw new Error(errorData.error || 'Failed to parse resume');
+        throw new Error(errorData.error?.message || String(errorData.error) || 'Failed to parse resume');
       }
 
       const dbResume = await extractResponse.json();
@@ -88,7 +88,7 @@ const ResumeUpload: React.FC<ResumeUploadProps> = ({ onResumeLoaded, isLoading =
 
       if (!parseResponse.ok) {
         const errorData = await parseResponse.json();
-        throw new Error(errorData.error || 'Failed to parse resume data');
+        throw new Error(errorData.error?.message || String(errorData.error) || 'Failed to parse resume data');
       }
 
       const parseData: ApiResponse<ParsedResume> = await parseResponse.json();
